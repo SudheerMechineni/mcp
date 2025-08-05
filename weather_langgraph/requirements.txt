@@ -1,0 +1,6 @@
+openai
+langgraph
+httpx
+mcp[cli]
+networkx
+matplotlib

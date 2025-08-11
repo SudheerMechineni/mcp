@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "payment-transaction-server": {
+      "command": "python",
+      "args": ["main.py"],
+      "cwd": "/Users/sankarvinnakota/San_No_Cloud_Sync/Learning/FSDS_AI/Class_Notes/mcp_payment_langgraph"
+    }
+  }
+}

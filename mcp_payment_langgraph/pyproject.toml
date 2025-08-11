@@ -1,0 +1,18 @@
+[project]
+name = "mcp-payment-langgraph"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "faker>=22.0.0",
+    "fastapi>=0.116.1",
+    "graphviz>=0.21",
+    "httpx>=0.28.1",
+    "langchain-core>=0.3.74",
+    "langgraph>=0.6.4",
+    "mcp>=1.12.4",
+    "pydantic>=2.11.0",
+    "python-dateutil>=2.9.0.post0",
+    "uvicorn>=0.35.0",
+]

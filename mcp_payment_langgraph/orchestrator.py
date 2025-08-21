@@ -1,6 +1,8 @@
 from typing import Any, Dict, List, Optional, Sequence, TypedDict
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from payment_service import payment_service
+from customer_manager import customer_manager
+from logger import request_logger
 import json
 from collections import defaultdict, deque
 from langgraph.graph import StateGraph, END
@@ -158,7 +160,7 @@ class PaymentOrchestrator:
     def _get_transactions(self, state: PaymentGraphState) -> PaymentGraphState:
         """Get high value transactions and update memory"""
         try:
-            transactions = self.service.get_high_value_transactions(5)
+            transactions = self.service.get_transactions(5)
             state["transactions"] = transactions
             # --- Memory: store for user ---
             user_id = self._get_user_id(state)
@@ -223,7 +225,7 @@ class PaymentOrchestrator:
                 transaction_id = transactions[0]["transaction_id"]
             else:
                 # Get a transaction ID from the service for verification
-                sample_transactions = self.service.get_high_value_transactions(1)
+                sample_transactions = self.service.get_transactions(1)
                 if sample_transactions:
                     transaction_id = sample_transactions[0]["transaction_id"]
             
@@ -254,7 +256,7 @@ class PaymentOrchestrator:
                         export_reference = next_word
                         break
             
-            nostro_result = self.service.check_euro_nostro_credit(export_reference)
+            nostro_result = self.service.get_nostro_accounts('EUR', export_reference)
             state["nostro_credit_result"] = nostro_result
             
         except Exception as e:
@@ -315,8 +317,8 @@ class PaymentOrchestrator:
                 f"Name: {rm['name']}\n"
                 f"Email: {rm['email']}\n"
                 f"Phone: {rm['phone']}\n"
-                f"Branch: {rm['branch']}\n"
-                f"Specialization: {', '.join(rm['specialization'])}\n"
+                f"Branch: {rm['department']}\n"
+                f"Specialization: {', '.join(rm['specialization']) if isinstance(rm['specialization'], list) else rm['specialization']}\n"
                 f"Experience: {rm['experience_years']} years"
             )
         

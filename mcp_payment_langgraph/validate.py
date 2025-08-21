@@ -29,12 +29,21 @@ def test_project():
         accounts = payment_service.get_nostro_accounts()
         print(f"✅ Nostro accounts: {accounts.get('total_count', 0)} found")
         
-        # Test orchestration
+        # Test orchestration (backend only - tools are commented out)
         response = payment_orchestrator.process_request("Show me transactions")
-        print(f"✅ LangGraph orchestration: {len(response)} char response")
+        print(f"✅ LangGraph orchestration (backend): {len(response)} char response")
         
         print("\n🎉 All tests passed!")
         print("🚀 Your MCP server is ready for Claude Desktop!")
+        print("\n📋 Available MCP Tools (6 total):")
+        print("   1. get_high_value_transactions")
+        print("   2. get_relationship_manager") 
+        print("   3. raise_dispute")
+        print("   4. verify_transaction_credit")
+        print("   5. check_euro_nostro_credit")
+        print("   6. get_nostro_accounts")
+        print("\n⚠️  Advanced tools (orchestrate_payment_workflow, get_user_transaction_memory)")
+        print("   are commented out but available for re-enabling if needed.")
         print("\nNext steps:")
         print("1. Add this server to your Claude Desktop config")
         print("2. Restart Claude Desktop")

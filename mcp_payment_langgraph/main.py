@@ -19,6 +19,9 @@ print("Starting MCP Payment Transaction Server...", file=sys.stderr)
 try:
     from orchestrator import payment_orchestrator
     from payment_service import payment_service
+    from customer_manager import customer_manager
+    from logger import request_logger
+    from database import payment_db
     print("Successfully imported payment modules", file=sys.stderr)
 except ImportError as e:
     print(f"Import error: {e}", file=sys.stderr)
@@ -33,8 +36,8 @@ async def handle_list_tools() -> list[Tool]:
     print("Listing tools...", file=sys.stderr)
     return [
         Tool(
-            name="get_high_value_transactions",
-            description="Fetch the last 5 high value payment transactions",
+            name="get_recent_transactions",
+            description="Fetch recent transactions (last 30 days by default, >100K by default)",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -42,39 +45,75 @@ async def handle_list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "Number of transactions to fetch (default: 5)",
                         "default": 5
+                    },
+                    "days_filter": {
+                        "type": "integer", 
+                        "description": "Number of days to look back (default: 30 for 'recent', 7 for 'last week', 14 for 'past 2 weeks')",
+                        "default": 30
+                    },
+                    "min_amount": {
+                        "type": "number",
+                        "description": "Minimum amount for transaction filter (default: 100000)",
+                        "default": 100000
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Customer ID to switch context (optional)"
                     }
                 }
             }
         ),
         Tool(
             name="get_relationship_manager",
-            description="Get relationship manager details for an account",
+            description="Get relationship manager details for current customer",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "account_number": {
+                    "customer_id": {
                         "type": "string",
-                        "description": "Account number to find assigned relationship manager (optional)"
+                        "description": "Customer ID to switch context (optional)"
                     }
                 }
             }
         ),
         Tool(
-            name="raise_dispute",
-            description="Raise a dispute for failed or pending payment transactions",
+            name="switch_customer",
+            description="Switch customer context using customer ID or name",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "customer_identifier": {
+                        "type": "string",
+                        "description": "Customer ID, customer name, or partial name to switch to"
+                    }
+                },
+                "required": ["customer_identifier"]
+            }
+        ),
+        Tool(
+            name="list_customers", 
+            description="List all available customers with their details",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="raise_servicerequest",
+            description="Raise a service request for failed or pending payment transactions",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "transaction_id": {
                         "type": "string",
-                        "description": "ID of the transaction to dispute"
+                        "description": "ID of the transaction for service request"
                     },
-                    "dispute_reason": {
+                    "servicerequest_reason": {
                         "type": "string",
-                        "description": "Reason for raising the dispute"
+                        "description": "Reason for raising the service request"
                     }
                 },
-                "required": ["transaction_id", "dispute_reason"]
+                "required": ["transaction_id", "servicerequest_reason"]
             }
         ),
         Tool(
@@ -92,55 +131,76 @@ async def handle_list_tools() -> list[Tool]:
             }
         ),
         Tool(
-            name="orchestrate_payment_workflow",
-            description="Orchestrate multiple payment operations based on natural language input using LangGraph",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "user_request": {
-                        "type": "string",
-                        "description": "Natural language description of what payment operations to perform"
-                    }
-                },
-                "required": ["user_request"]
-            }
-        ),
-        Tool(
-            name="get_user_transaction_memory",
-            description="Get the last 5 transactions from memory for a specific user",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "user_id": {
-                        "type": "string",
-                        "description": "User ID to retrieve transaction memory for (default: default_user)",
-                        "default": "default_user"
-                    }
-                }
-            }
-        ),
-        Tool(
-            name="check_euro_nostro_credit",
-            description="Check if Euro Nostro account is credited for export settlement",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "export_reference": {
-                        "type": "string",
-                        "description": "Specific export reference to check (optional)"
-                    }
-                }
-            }
-        ),
-        Tool(
             name="get_nostro_accounts",
-            description="Get nostro accounts, optionally filtered by currency",
+            description="Get nostro accounts, optionally filtered by currency. For EUR, includes settlement details",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "currency": {
                         "type": "string",
                         "description": "Currency filter (EUR, USD, GBP, etc.) - optional"
+                    },
+                    "export_reference": {
+                        "type": "string", 
+                        "description": "For EUR currency, specific export reference to check settlements - optional"
+                    }
+                }
+            }
+        ),
+        # Personalized Journey Assembly Tools
+        Tool(
+            name="get_treasury_pricing",
+            description="Get treasury FX pricing for customer",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "string", 
+                        "description": "Customer ID (optional, uses current context)"
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="get_investment_proposals",
+            description="Get investment proposals and opportunities for customer",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Customer ID (optional, uses current context)"
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="get_cash_forecasts",
+            description="Get cash flow forecasts for customer",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Customer ID (optional, uses current context)"
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "Number of days to forecast (default: 30)",
+                        "default": 30
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="get_risk_limits",
+            description="Get risk limits and utilization for customer",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Customer ID (optional, uses current context)"
                     }
                 }
             }
@@ -157,9 +217,37 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
         arguments = {}
     
     try:
-        if name == "get_high_value_transactions":
+        # Handle customer switching from user input if available
+        user_input = ""
+        for key in ["user_request", "customer_identifier"]:
+            if key in arguments and arguments[key]:
+                user_input = str(arguments[key])
+                break
+        
+        if user_input:
+            customer_switch = customer_manager.detect_customer_switch_request(user_input)
+            if customer_switch:
+                customer_manager.switch_customer(customer_switch)
+        
+        if name == "get_recent_transactions":
             limit = arguments.get("limit", 5)
-            result = payment_service.get_high_value_transactions(limit)
+            days_filter = arguments.get("days_filter", 30)
+            min_amount = arguments.get("min_amount", 100000.0)
+            customer_id = arguments.get("customer_id")
+            
+            # Switch customer if requested
+            if customer_id:
+                customer_manager.switch_customer(customer_id)
+            
+            result = payment_service.get_transactions(
+                limit=limit, 
+                days_filter=days_filter, 
+                min_amount=min_amount,
+                customer_id=customer_id
+            )
+            
+            current_customer = customer_manager.get_current_customer()
+            customer_name = current_customer['customer_name'] if current_customer else 'Unknown'
             
             return [
                 TextContent(
@@ -167,14 +255,101 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
                     text=json.dumps({
                         "status": "success",
                         "data": result,
-                        "message": f"Retrieved {len(result)} high value transactions"
+                        "customer": customer_name,
+                        "filters": {
+                            "days_filter": days_filter,
+                            "min_amount": min_amount
+                        },
+                        "message": f"Retrieved {len(result)} recent transactions for {customer_name}"
                     }, indent=2)
                 )
             ]
         
         elif name == "get_relationship_manager":
-            account_number = arguments.get("account_number")
-            result = payment_service.get_relationship_manager_details(account_number)
+            customer_id = arguments.get("customer_id")
+            
+            # Switch customer if requested
+            if customer_id:
+                customer_manager.switch_customer(customer_id)
+            
+            result = payment_service.get_relationship_manager_details(customer_id)
+            
+            current_customer = customer_manager.get_current_customer()
+            customer_name = current_customer['customer_name'] if current_customer else 'Unknown'
+            
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "status": "success",
+                        "data": result,
+                        "customer": customer_name,
+                        "message": f"Retrieved relationship manager for {customer_name}"
+                    }, indent=2)
+                )
+            ]
+        
+        elif name == "switch_customer":
+            customer_identifier = arguments.get("customer_identifier")
+            if not customer_identifier:
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps({
+                            "status": "error",
+                            "message": "customer_identifier is required"
+                        }, indent=2)
+                    )
+                ]
+            
+            success = customer_manager.switch_customer(customer_identifier)
+            if success:
+                current_customer = customer_manager.get_current_customer()
+                if current_customer:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps({
+                                "status": "success",
+                                "data": current_customer,
+                                "message": f"Successfully switched to customer: {current_customer['customer_name']}"
+                            }, indent=2)
+                        )
+                    ]
+                else:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps({
+                                "status": "error",
+                                "message": "Failed to retrieve customer after switch"
+                            }, indent=2)
+                        )
+                    ]
+            else:
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps({
+                            "status": "error",
+                            "message": f"Customer not found: {customer_identifier}"
+                        }, indent=2)
+                    )
+                ]
+        
+        elif name == "list_customers":
+            customers = customer_manager.list_customers()
+            
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "status": "success",
+                        "data": customers,
+                        "message": f"Retrieved {len(customers)} customers"
+                    }, indent=2)
+                )
+            ]
             
             return [
                 TextContent(
@@ -187,22 +362,22 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
                 )
             ]
         
-        elif name == "raise_dispute":
+        elif name == "raise_servicerequest":
             transaction_id = arguments.get("transaction_id")
-            dispute_reason = arguments.get("dispute_reason")
+            servicerequest_reason = arguments.get("servicerequest_reason")
             
-            if not transaction_id or not dispute_reason:
+            if not transaction_id or not servicerequest_reason:
                 return [
                     TextContent(
                         type="text",
                         text=json.dumps({
                             "status": "error",
-                            "message": "Both transaction_id and dispute_reason are required"
+                            "message": "Both transaction_id and servicerequest_reason are required"
                         }, indent=2)
                     )
                 ]
             
-            result = payment_service.raise_dispute(transaction_id, dispute_reason)
+            result = payment_service.raise_servicerequest(transaction_id, servicerequest_reason)
             
             return [
                 TextContent(
@@ -210,7 +385,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
                     text=json.dumps({
                         "status": "success",
                         "data": result,
-                        "message": "Dispute raised successfully"
+                        "message": "Service request raised successfully"
                     }, indent=2)
                 )
             ]
@@ -239,73 +414,12 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
                         "data": result,
                         "message": "Transaction verification completed"
                     }, indent=2)
-                )
-            ]
-        
-        elif name == "orchestrate_payment_workflow":
-            user_request = arguments.get("user_request")
-            
-            if not user_request:
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps({
-                            "status": "error",
-                            "message": "user_request is required"
-                        }, indent=2)
-                    )
-                ]
-            
-            # Use LangGraph orchestrator to process the request
-            result = payment_orchestrator.process_request(user_request)
-            
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps({
-                        "status": "success",
-                        "data": {"response": result},
-                        "message": "Payment workflow orchestrated successfully"
-                    }, indent=2)
-                )
-            ]
-        
-        elif name == "get_user_transaction_memory":
-            user_id = arguments.get("user_id", "default_user")
-            result = payment_orchestrator.get_last_transactions_for_user(user_id)
-            
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps({
-                        "status": "success",
-                        "data": {
-                            "user_id": user_id,
-                            "last_transactions": result
-                        },
-                        "message": f"Retrieved {len(result)} transactions from memory for user {user_id}"
-                    }, indent=2)
-                )
-            ]
-        
-        elif name == "check_euro_nostro_credit":
-            export_reference = arguments.get("export_reference")
-            result = payment_service.check_euro_nostro_credit(export_reference)
-            
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps({
-                        "status": "success",
-                        "data": result,
-                        "message": "Euro Nostro credit check completed"
-                    }, indent=2)
-                )
-            ]
-        
+                )            ]
+
         elif name == "get_nostro_accounts":
             currency = arguments.get("currency")
-            result = payment_service.get_nostro_accounts(currency)
+            export_reference = arguments.get("export_reference")
+            result = payment_service.get_nostro_accounts(currency, export_reference)
             
             return [
                 TextContent(
@@ -314,6 +428,79 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
                         "status": "success",
                         "data": result,
                         "message": "Retrieved nostro accounts"
+                    }, indent=2)
+                )
+            ]
+        
+        elif name == "get_treasury_pricing":
+            customer_id = arguments.get("customer_id")
+            if customer_id:
+                customer_manager.switch_customer(customer_id)
+            
+            result = payment_service.get_treasury_pricing(customer_id)
+            
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "status": "success",
+                        "data": result,
+                        "message": "Retrieved treasury pricing"
+                    }, indent=2)
+                )
+            ]
+        
+        elif name == "get_investment_proposals":
+            customer_id = arguments.get("customer_id")
+            if customer_id:
+                customer_manager.switch_customer(customer_id)
+            
+            result = payment_service.get_investment_proposals(customer_id)
+            
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "status": "success",
+                        "data": result,
+                        "message": "Retrieved investment proposals"
+                    }, indent=2)
+                )
+            ]
+        
+        elif name == "get_cash_forecasts":
+            customer_id = arguments.get("customer_id")
+            days = arguments.get("days", 30)
+            if customer_id:
+                customer_manager.switch_customer(customer_id)
+            
+            result = payment_service.get_cash_forecasts(customer_id, days)
+            
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "status": "success",
+                        "data": result,
+                        "message": "Retrieved cash forecasts"
+                    }, indent=2)
+                )
+            ]
+        
+        elif name == "get_risk_limits":
+            customer_id = arguments.get("customer_id")
+            if customer_id:
+                customer_manager.switch_customer(customer_id)
+            
+            result = payment_service.get_risk_limits(customer_id)
+            
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "status": "success",
+                        "data": result,
+                        "message": "Retrieved risk limits"
                     }, indent=2)
                 )
             ]

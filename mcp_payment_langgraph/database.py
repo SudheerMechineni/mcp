@@ -23,8 +23,16 @@ fake = Faker()
 class PaymentDatabase:
     """SQLite database manager for payment transactions with best practices"""
     
-    def __init__(self, db_path: str = "payment_transactions.db"):
+    def __init__(self, db_path: str = None):
+        # Store DB in the same directory as this script by default
+        if db_path is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(base_dir, "payment_transactions.db")
         self.db_path = db_path
+        # Ensure the directory exists
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
         self.init_database()
         
     @contextmanager

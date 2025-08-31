@@ -17,7 +17,15 @@ log_formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - [Customer: %(customer_id)s] - %(message)s'
 )
 
-file_handler = logging.FileHandler('mcp_server.log')
+
+# Use log file in the same directory as this script
+import os
+log_dir = os.path.dirname(os.path.abspath(__file__))
+log_path = os.path.join(log_dir, 'mcp_server.log')
+# Ensure directory exists (should always exist, but for safety)
+if log_dir and not os.path.exists(log_dir):
+    os.makedirs(log_dir, exist_ok=True)
+file_handler = logging.FileHandler(log_path)
 file_handler.setFormatter(log_formatter)
 
 # Create logger

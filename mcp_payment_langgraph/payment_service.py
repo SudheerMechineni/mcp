@@ -5,7 +5,7 @@ from models import (
     data_generator, 
     PaymentTransaction, 
     RelationshipManager, 
-    DisputeRequest, 
+    ServiceRequest, 
     TransactionVerification,
     TransactionStatus
 )
@@ -16,17 +16,17 @@ class PaymentAPIService:
     def __init__(self):
         self.data_generator = data_generator
     
-    def get_high_value_transactions(self, limit: int = 5) -> List[Dict[str, Any]]:
+    def get_transactions(self, limit: int = 5) -> List[Dict[str, Any]]:
         """
-        API 1: Fetch last 5 high value payment transactions
+        API 1: Fetch last 5 payment transactions
         
         Args:
             limit: Number of transactions to fetch (default: 5)
             
         Returns:
-            List of high value transactions
+            List of transactions
         """
-        transactions = self.data_generator.get_high_value_transactions(limit)
+        transactions = self.data_generator.get_transactions(limit)
         
         result = []
         for txn in transactions:
@@ -66,20 +66,20 @@ class PaymentAPIService:
             "specialization": rm.specialization,
             "experience_years": rm.experience_years
         }
-    
-    def raise_dispute(self, transaction_id: str, dispute_reason: str) -> Dict[str, Any]:
+
+    def raise_service_request(self, transaction_id: str, sr_reason: str) -> Dict[str, Any]:
         """
-        API 3: Raise dispute for failed/pending payment transactions
-        
+        API 3: Raise service request for failed/pending payment transactions
+
         Args:
             transaction_id: ID of the transaction to dispute
-            dispute_reason: Reason for the dispute
-            
+            sr_reason: Reason for the service request
+
         Returns:
-            Dispute details with assigned relationship manager
+            Service request details with assigned relationship manager
         """
         # First verify the transaction exists and is disputable
-        transactions = self.data_generator.get_high_value_transactions(20)
+        transactions = self.data_generator.get_transactions(20)
         transaction = None
         
         for txn in transactions:
@@ -92,24 +92,24 @@ class PaymentAPIService:
         
         if transaction.status not in [TransactionStatus.FAILED, TransactionStatus.PENDING]:
             raise ValueError(f"Cannot dispute transaction with status: {transaction.status}")
-        
-        # Create dispute
-        dispute = self.data_generator.create_dispute(transaction_id, dispute_reason)
-        
+
+        # Create service request
+        service_request = self.data_generator.create_service_request(transaction_id, sr_reason)
+
         # Get assigned relationship manager details
         rm = None
         for manager in self.data_generator._relationship_managers:
-            if manager.manager_id == dispute.assigned_manager_id:
+            if manager.manager_id == service_request.assigned_manager_id:
                 rm = manager
                 break
         
         return {
-            "dispute_id": dispute.dispute_id,
-            "transaction_id": dispute.transaction_id,
-            "customer_account": dispute.customer_account,
-            "dispute_reason": dispute.dispute_reason,
-            "status": dispute.status.value,
-            "created_date": dispute.created_date.isoformat(),
+            "service_request_id": service_request.service_request_id,
+            "transaction_id": service_request.transaction_id,
+            "customer_account": service_request.customer_account,
+            "sr_reason": service_request.sr_reason,
+            "status": service_request.status.value,
+            "created_date": service_request.created_date.isoformat(),
             "assigned_manager": {
                 "manager_id": rm.manager_id,
                 "name": rm.name,

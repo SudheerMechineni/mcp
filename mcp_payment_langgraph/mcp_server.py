@@ -32,7 +32,7 @@ async def handle_list_tools() -> list[Tool]:
     print("Listing tools...", file=sys.stderr)
     return [
         Tool(
-            name="get_high_value_transactions",
+            name="get_transactions",
             description="Fetch the last 5 high value payment transactions",
             inputSchema={
                 "type": "object",
@@ -59,8 +59,8 @@ async def handle_list_tools() -> list[Tool]:
             }
         ),
         Tool(
-            name="raise_dispute",
-            description="Raise a dispute for failed or pending payment transactions",
+            name="raise_service_request",
+            description="Raise a service request for failed or pending payment transactions",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -68,7 +68,7 @@ async def handle_list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "ID of the transaction to dispute"
                     },
-                    "dispute_reason": {
+                    "reason": {
                         "type": "string",
                         "description": "Reason for raising the dispute"
                     }

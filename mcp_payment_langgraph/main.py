@@ -13,6 +13,9 @@ from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResourc
 from pydantic import AnyUrl
 import mcp.server.stdio
 
+import os, sys
+print(f"CWD={os.getcwd()} ARGV={sys.argv}", file=sys.stderr, flush=True)
+
 # Add debug output to stderr for troubleshooting
 print("Starting MCP Payment Transaction Server...", file=sys.stderr)
 
@@ -33,8 +36,8 @@ async def handle_list_tools() -> list[Tool]:
     print("Listing tools...", file=sys.stderr)
     return [
         Tool(
-            name="get_high_value_transactions",
-            description="Fetch the last 5 high value payment transactions",
+            name="get_transactions",
+            description="Fetch the last 5 payment transactions",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -60,21 +63,21 @@ async def handle_list_tools() -> list[Tool]:
             }
         ),
         Tool(
-            name="raise_dispute",
-            description="Raise a dispute for failed or pending payment transactions",
+            name="raise_service_request",
+            description="Raise a service request for failed or pending payment transactions",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "transaction_id": {
                         "type": "string",
-                        "description": "ID of the transaction to dispute"
+                        "description": "ID of the transaction to service request"
                     },
-                    "dispute_reason": {
+                    "sr_reason": {
                         "type": "string",
-                        "description": "Reason for raising the dispute"
+                        "description": "Reason for raising the service request"
                     }
                 },
-                "required": ["transaction_id", "dispute_reason"]
+                "required": ["transaction_id", "sr_reason"]
             }
         ),
         Tool(
@@ -89,34 +92,6 @@ async def handle_list_tools() -> list[Tool]:
                     }
                 },
                 "required": ["transaction_id"]
-            }
-        ),
-        Tool(
-            name="orchestrate_payment_workflow",
-            description="Orchestrate multiple payment operations based on natural language input using LangGraph",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "user_request": {
-                        "type": "string",
-                        "description": "Natural language description of what payment operations to perform"
-                    }
-                },
-                "required": ["user_request"]
-            }
-        ),
-        Tool(
-            name="get_user_transaction_memory",
-            description="Get the last 5 transactions from memory for a specific user",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "user_id": {
-                        "type": "string",
-                        "description": "User ID to retrieve transaction memory for (default: default_user)",
-                        "default": "default_user"
-                    }
-                }
             }
         ),
         Tool(
@@ -157,9 +132,9 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
         arguments = {}
     
     try:
-        if name == "get_high_value_transactions":
+        if name == "get_transactions":
             limit = arguments.get("limit", 5)
-            result = payment_service.get_high_value_transactions(limit)
+            result = payment_service.get_transactions(limit)
             
             return [
                 TextContent(
@@ -167,7 +142,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
                     text=json.dumps({
                         "status": "success",
                         "data": result,
-                        "message": f"Retrieved {len(result)} high value transactions"
+                        "message": f"Retrieved {len(result)} transactions"
                     }, indent=2)
                 )
             ]
@@ -187,22 +162,22 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
                 )
             ]
         
-        elif name == "raise_dispute":
+        elif name == "raise_service_request":
             transaction_id = arguments.get("transaction_id")
-            dispute_reason = arguments.get("dispute_reason")
+            sr_reason = arguments.get("sr_reason")
             
-            if not transaction_id or not dispute_reason:
+            if not transaction_id or not sr_reason:
                 return [
                     TextContent(
                         type="text",
                         text=json.dumps({
                             "status": "error",
-                            "message": "Both transaction_id and dispute_reason are required"
+                            "message": "Both transaction_id and sr_reason are required"
                         }, indent=2)
                     )
                 ]
-            
-            result = payment_service.raise_dispute(transaction_id, dispute_reason)
+
+            result = payment_service.raise_service_request(transaction_id, sr_reason)
             
             return [
                 TextContent(
@@ -210,7 +185,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[
                     text=json.dumps({
                         "status": "success",
                         "data": result,
-                        "message": "Dispute raised successfully"
+                        "message": "Service Request raised successfully"
                     }, indent=2)
                 )
             ]

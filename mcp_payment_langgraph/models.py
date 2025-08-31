@@ -13,7 +13,7 @@ class TransactionStatus(str, Enum):
     PENDING = "pending"
     DISPUTED = "disputed"
 
-class DisputeStatus(str, Enum):
+class ServiceRequestStatus(str, Enum):
     OPEN = "open"
     UNDER_REVIEW = "under_review"
     RESOLVED = "resolved"
@@ -40,12 +40,12 @@ class RelationshipManager(BaseModel):
     specialization: List[str]
     experience_years: int
 
-class DisputeRequest(BaseModel):
-    dispute_id: str
+class ServiceRequest(BaseModel):
+    service_request_id: str
     transaction_id: str
     customer_account: str
-    dispute_reason: str
-    status: DisputeStatus
+    sr_reason: str
+    status: ServiceRequestStatus
     created_date: datetime
     assigned_manager_id: str
     resolution_notes: Optional[str] = None
@@ -104,16 +104,16 @@ class ExportSettlement(BaseModel):
 class MockDataGenerator:
     def __init__(self):
         self.fake = Faker()
-        self._high_value_transactions = []
+        self._transactions = []
         self._relationship_managers = []
-        self._disputes = []
+        self._service_requests = []
         self._nostro_accounts = []
         self._export_settlements = []
         self._generate_mock_data()
     
     def _generate_mock_data(self):
         """Generate mock data for testing"""
-        # Generate high value transactions
+        # Generate transactions
         for i in range(20):
             transaction = PaymentTransaction(
                 transaction_id=f"TXN{self.fake.unique.random_number(digits=10)}",
@@ -126,10 +126,10 @@ class MockDataGenerator:
                 recipient_account=self.fake.iban(),
                 transaction_type=random.choice(["wire_transfer", "ach", "international", "domestic"])
             )
-            self._high_value_transactions.append(transaction)
+            self._transactions.append(transaction)
         
         # Sort by date (newest first)
-        self._high_value_transactions.sort(key=lambda x: x.transaction_date, reverse=True)
+        self._transactions.sort(key=lambda x: x.transaction_date, reverse=True)
         
         # Generate relationship managers
         specializations = [
@@ -218,36 +218,36 @@ class MockDataGenerator:
             )
             self._export_settlements.append(settlement)
     
-    def get_high_value_transactions(self, limit: int = 5) -> List[PaymentTransaction]:
-        """Get last N high value transactions"""
-        return self._high_value_transactions[:limit]
+    def get_transactions(self, limit: int = 5) -> List[PaymentTransaction]:
+        """Get last N transactions"""
+        return self._transactions[:limit]
     
     def get_relationship_manager(self, account_number: Optional[str] = None) -> RelationshipManager:
         """Get relationship manager for account or random manager"""
         return random.choice(self._relationship_managers)
-    
-    def create_dispute(self, transaction_id: str, reason: str) -> DisputeRequest:
-        """Create a new dispute for a transaction"""
+
+    def create_service_request(self, transaction_id: str, reason: str) -> ServiceRequest:
+        """Create a new service request for a transaction"""
         manager = self.get_relationship_manager()
-        
-        dispute = DisputeRequest(
-            dispute_id=f"DISP{self.fake.unique.random_number(digits=8)}",
+
+        service_request = ServiceRequest(
+            service_request_id=f"SVC{self.fake.unique.random_number(digits=8)}",
             transaction_id=transaction_id,
             customer_account=self.fake.iban(),
-            dispute_reason=reason,
-            status=DisputeStatus.OPEN,
+            sr_reason=reason,
+            status=ServiceRequestStatus.OPEN,
             created_date=datetime.now(),
             assigned_manager_id=manager.manager_id
         )
-        
-        self._disputes.append(dispute)
-        return dispute
-    
+
+        self._service_requests.append(service_request)
+        return service_request
+
     def verify_transaction(self, transaction_id: str) -> TransactionVerification:
         """Verify if transaction is credited to account"""
         # Find transaction in our mock data
         transaction = None
-        for txn in self._high_value_transactions:
+        for txn in self._transactions:
             if txn.transaction_id == transaction_id:
                 transaction = txn
                 break

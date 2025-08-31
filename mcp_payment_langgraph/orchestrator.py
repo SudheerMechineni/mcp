@@ -9,10 +9,10 @@ class PaymentGraphState(TypedDict):
     """State for the payment processing graph"""
     messages: Sequence[BaseMessage]
     user_input: str
-    action_needed: List[str]  # List of actions: ['get_transactions', 'raise_dispute', 'get_rm', 'verify_transaction', 'check_nostro', 'get_nostro_accounts']
+    action_needed: List[str]  # List of actions: ['get_transactions', 'raise_service_request', 'get_rm', 'verify_transaction', 'check_nostro', 'get_nostro_accounts']
     transactions: Optional[List[Dict[str, Any]]]
     relationship_manager: Optional[Dict[str, Any]]
-    dispute_details: Optional[Dict[str, Any]]
+    service_request_details: Optional[Dict[str, Any]]
     verification_result: Optional[Dict[str, Any]]
     nostro_credit_result: Optional[Dict[str, Any]]
     nostro_accounts: Optional[Dict[str, Any]]
@@ -36,7 +36,7 @@ class PaymentOrchestrator:
         workflow.add_node("analyze_request", self._analyze_request)
         workflow.add_node("get_transactions", self._get_transactions)
         workflow.add_node("get_relationship_manager", self._get_relationship_manager)
-        workflow.add_node("raise_dispute", self._raise_dispute)
+        workflow.add_node("raise_service_request", self._raise_service_request)
         workflow.add_node("verify_transaction", self._verify_transaction)
         workflow.add_node("check_nostro_credit", self._check_nostro_credit)
         workflow.add_node("get_nostro_accounts", self._get_nostro_accounts)
@@ -64,23 +64,23 @@ class PaymentOrchestrator:
             "get_transactions",
             self._check_next_action,
             {
-                "raise_dispute": "get_relationship_manager",
+                "raise_service_request": "get_relationship_manager",
                 "format_response": "format_response"
             }
         )
-        
-        # RM flow (needed for disputes)
+
+        # RM flow (needed for service requests)
         workflow.add_conditional_edges(
             "get_relationship_manager",
-            self._check_dispute_needed,
+            self._check_service_request_needed,
             {
-                "raise_dispute": "raise_dispute",
+                "raise_service_request": "raise_service_request",
                 "format_response": "format_response"
             }
         )
-        
-        # Dispute and verification flow
-        workflow.add_edge("raise_dispute", "format_response")
+
+        # Service request and verification flow
+        workflow.add_edge("raise_service_request", "format_response")
         workflow.add_edge("verify_transaction", "format_response")
         workflow.add_edge("check_nostro_credit", "format_response")
         workflow.add_edge("get_nostro_accounts", "format_response")
@@ -93,12 +93,12 @@ class PaymentOrchestrator:
         actions = []
         
         # Determine what actions are needed based on user input
-        if any(keyword in user_input for keyword in ["transaction", "payment", "high value", "last 5"]):
+        if any(keyword in user_input for keyword in ["transaction", "payment", "recent"]):
             actions.append("get_transactions")
-        
-        if any(keyword in user_input for keyword in ["dispute", "raise dispute", "failed", "pending"]):
-            actions.append("raise_dispute")
-        
+
+        if any(keyword in user_input for keyword in ["service", "raise service request", "failed", "pending", "escalate", "urgent", "dispute"]):
+            actions.append("raise_service_request")
+
         if any(keyword in user_input for keyword in ["relationship manager", "manager", "rm"]):
             actions.append("get_rm")
         
@@ -111,9 +111,9 @@ class PaymentOrchestrator:
         
         if any(keyword in user_input for keyword in ["nostro accounts", "correspondent accounts", "nostro list"]):
             actions.append("get_nostro_accounts")
-        
-        # If dispute is needed, we also need RM
-        if "raise_dispute" in actions and "get_rm" not in actions:
+
+        # If service request is needed, we also need RM
+        if "raise_service_request" in actions and "get_rm" not in actions:
             actions.append("get_rm")
         
         state["action_needed"] = actions
@@ -138,14 +138,14 @@ class PaymentOrchestrator:
     
     def _check_next_action(self, state: PaymentGraphState) -> str:
         """Check what to do after getting transactions"""
-        if "raise_dispute" in state["action_needed"]:
-            return "raise_dispute"
+        if "raise_service_request" in state["action_needed"]:
+            return "raise_service_request"
         return "format_response"
-    
-    def _check_dispute_needed(self, state: PaymentGraphState) -> str:
-        """Check if dispute needs to be raised after getting RM"""
-        if "raise_dispute" in state["action_needed"]:
-            return "raise_dispute"
+
+    def _check_service_request_needed(self, state: PaymentGraphState) -> str:
+        """Check if service request needs to be raised after getting RM"""
+        if "raise_service_request" in state["action_needed"]:
+            return "raise_service_request"
         return "format_response"
     
     def _get_user_id(self, state: PaymentGraphState) -> str:
@@ -156,9 +156,9 @@ class PaymentOrchestrator:
         return "default_user"
 
     def _get_transactions(self, state: PaymentGraphState) -> PaymentGraphState:
-        """Get high value transactions and update memory"""
+        """Get transactions and update memory"""
         try:
-            transactions = self.service.get_high_value_transactions(5)
+            transactions = self.service.get_transactions(5)
             state["transactions"] = transactions
             # --- Memory: store for user ---
             user_id = self._get_user_id(state)
@@ -183,32 +183,32 @@ class PaymentOrchestrator:
             print(f"Error getting relationship manager: {e}")
         
         return state
-    
-    def _raise_dispute(self, state: PaymentGraphState) -> PaymentGraphState:
-        """Raise dispute for a transaction"""
+
+    def _raise_service_request(self, state: PaymentGraphState) -> PaymentGraphState:
+        """Raise service request for a transaction"""
         try:
             transactions = state.get("transactions", [])
             if transactions:
-                # Find a failed or pending transaction to dispute
-                disputable_txn = None
+                # Find a failed or pending transaction to raise service request
+                service_request_txn = None
                 for txn in transactions:
                     if txn["status"] in ["failed", "pending"]:
-                        disputable_txn = txn
+                        service_request_txn = txn
                         break
-                
-                if disputable_txn:
-                    dispute = self.service.raise_dispute(
-                        disputable_txn["transaction_id"],
+
+                if service_request_txn:
+                    service_request = self.service.raise_service_request(
+                        service_request_txn["transaction_id"],
                         "Transaction failed to process within expected timeframe"
                     )
-                    state["dispute_details"] = dispute
+                    state["service_request_details"] = service_request
                 else:
-                    state["dispute_details"] = {"error": "No disputable transactions found"}
+                    state["service_request_details"] = {"error": "No service requestable transactions found"}
             else:
-                state["dispute_details"] = {"error": "No transactions available to dispute"}
-                
+                state["service_request_details"] = {"error": "No transactions available to raise service request"}
+
         except Exception as e:
-            state["dispute_details"] = {"error": f"Error raising dispute: {e}"}
+            state["service_request_details"] = {"error": f"Error raising service request: {e}"}
         
         return state
     
@@ -223,7 +223,7 @@ class PaymentOrchestrator:
                 transaction_id = transactions[0]["transaction_id"]
             else:
                 # Get a transaction ID from the service for verification
-                sample_transactions = self.service.get_high_value_transactions(1)
+                sample_transactions = self.service.get_transactions(1)
                 if sample_transactions:
                     transaction_id = sample_transactions[0]["transaction_id"]
             
@@ -298,7 +298,7 @@ class PaymentOrchestrator:
         response_parts = []
         txns = state.get("transactions") or []
         if txns:
-            response_parts.append("**High Value Transactions (Last 5):**")
+            response_parts.append("**Transactions (Last 5):**")
             for i, txn in enumerate(txns, 1):
                 response_parts.append(
                     f"{i}. Transaction ID: {txn['transaction_id']}\n"
@@ -320,18 +320,18 @@ class PaymentOrchestrator:
                 f"Experience: {rm['experience_years']} years"
             )
         
-        dispute = state.get("dispute_details")
-        if dispute:
-            if isinstance(dispute, dict) and "error" in dispute:
-                response_parts.append(f"**Dispute Error:** {dispute['error']}")
+        service_request = state.get("service_request_details")
+        if service_request:
+            if isinstance(service_request, dict) and "error" in service_request:
+                response_parts.append(f"**Service Request Error:** {service_request['error']}")
             else:
                 response_parts.append(
-                    f"**Dispute Raised Successfully:**\n"
-                    f"Dispute ID: {dispute.get('dispute_id','')}\n"
-                    f"Transaction ID: {dispute.get('transaction_id','')}\n"
-                    f"Status: {dispute.get('status','')}\n"
-                    f"Assigned Manager: {dispute.get('assigned_manager',{}).get('name','N/A')}\n"
-                    f"Manager Contact: {dispute.get('assigned_manager',{}).get('email','N/A')}"
+                    f"**Service Request Raised Successfully:**\n"
+                    f"Service Request ID: {service_request.get('service_request_id','')}\n"
+                    f"Transaction ID: {service_request.get('transaction_id','')}\n"
+                    f"Status: {service_request.get('status','')}\n"
+                    f"Assigned Manager: {service_request.get('assigned_manager',{}).get('name','N/A')}\n"
+                    f"Manager Contact: {service_request.get('assigned_manager',{}).get('email','N/A')}"
                 )
         
         verification = state.get("verification_result")
@@ -431,7 +431,7 @@ class PaymentOrchestrator:
             action_needed=[],
             transactions=None,
             relationship_manager=None,
-            dispute_details=None,
+            service_request_details=None,
             verification_result=None,
             nostro_credit_result=None,
             nostro_accounts=None,
